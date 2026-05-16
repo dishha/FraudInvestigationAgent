@@ -1,0 +1,150 @@
+2026-05-16 03:23:52,126 - app - INFO - test log entry
+2026-05-16 03:24:06,288 - __main__ - INFO - Application started
+2026-05-16 03:24:06,520 - __main__ - INFO - Scoring transaction 71113
+2026-05-16 03:24:06,903 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE, Risk: HIGH
+2026-05-16 03:24:10,929 - __main__ - INFO - Application started
+2026-05-16 03:24:11,104 - __main__ - INFO - Scoring transaction 71113
+2026-05-16 03:24:11,425 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE, Risk: HIGH
+2026-05-16 03:38:40,009 - __main__ - INFO - Application started
+2026-05-16 03:38:41,974 - __main__ - INFO - Application started
+2026-05-16 03:38:42,111 - __main__ - INFO - Scoring transaction 0
+2026-05-16 03:38:42,415 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE, Risk: HIGH, Latency: 0.1ms
+2026-05-16 03:38:51,279 - __main__ - INFO - Application started
+2026-05-16 03:38:56,996 - __main__ - INFO - Application started
+2026-05-16 03:40:45,381 - __main__ - INFO - Application started
+2026-05-16 03:41:05,672 - __main__ - INFO - Application started
+2026-05-16 03:41:07,258 - __main__ - INFO - Application started
+2026-05-16 03:41:07,399 - __main__ - INFO - Scoring transaction 0
+2026-05-16 03:41:07,712 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE, Risk: HIGH, Latency: 0.1ms
+2026-05-16 03:43:47,371 - __main__ - INFO - Application started
+2026-05-16 03:43:49,041 - __main__ - INFO - Application started
+2026-05-16 03:43:49,217 - __main__ - INFO - Scoring transaction 0
+2026-05-16 03:43:49,529 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE, Risk: HIGH, Latency: 0.1ms
+2026-05-16 03:44:16,594 - __main__ - INFO - Application started
+2026-05-16 03:48:42,123 - __main__ - INFO - Application started
+2026-05-16 03:48:43,667 - __main__ - INFO - Application started
+2026-05-16 03:48:43,815 - __main__ - INFO - Scoring transaction 0
+2026-05-16 03:48:44,130 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE, Risk: HIGH, Latency: 0.1ms
+2026-05-16 03:49:08,336 - __main__ - INFO - Application started
+2026-05-16 03:49:08,402 - __main__ - INFO - Application started
+2026-05-16 03:49:09,551 - __main__ - INFO - Application started
+2026-05-16 03:49:09,681 - __main__ - INFO - Scoring transaction 79737
+2026-05-16 03:49:10,030 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE, Risk: HIGH, Latency: 0.1ms
+2026-05-16 03:49:19,768 - __main__ - INFO - Application started
+2026-05-16 03:49:19,893 - __main__ - INFO - Application started
+2026-05-16 03:49:20,108 - __main__ - INFO - Scoring transaction 51055
+2026-05-16 03:49:20,425 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE, Risk: HIGH, Latency: 0.1ms
+2026-05-16 03:58:56,059 - __main__ - INFO - Application started
+2026-05-16 03:58:57,983 - __main__ - INFO - Application started
+2026-05-16 03:58:58,129 - __main__ - INFO - Scoring transaction 0
+2026-05-16 03:58:58,441 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE, Risk: HIGH, Latency: 0.1ms
+2026-05-16 03:58:58,454 - __main__ - ERROR - Error scoring: module 'helpers.feature_attribution' has no attribute 'generate_counterfactual'
+2026-05-16 04:00:29,694 - __main__ - INFO - Application started
+2026-05-16 04:00:31,382 - __main__ - INFO - Application started
+2026-05-16 04:00:31,563 - __main__ - INFO - Scoring transaction 0
+2026-05-16 04:00:31,873 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE, Risk: HIGH, Latency: 0.1ms
+2026-05-16 04:00:31,885 - __main__ - ERROR - Error scoring: 'Booster' object has no attribute 'predict_proba'
+2026-05-16 04:00:49,786 - __main__ - INFO - Application started
+2026-05-16 04:00:49,966 - __main__ - INFO - Scoring transaction 0
+2026-05-16 04:00:50,274 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE, Risk: HIGH, Latency: 0.1ms
+2026-05-16 04:01:30,947 - __main__ - INFO - Application started
+2026-05-16 04:01:31,015 - __main__ - INFO - Application started
+2026-05-16 04:01:32,749 - __main__ - INFO - Application started
+2026-05-16 04:01:32,897 - __main__ - INFO - Scoring transaction 77345
+2026-05-16 04:01:33,264 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE, Risk: HIGH, Latency: 0.1ms
+2026-05-16 12:12:27,151 - __main__ - INFO - Loading models...
+2026-05-16 12:12:27,740 - __main__ - INFO - Models loaded: 843 trees, 460 features
+2026-05-16 12:12:27,740 - __main__ - INFO - Loading data...
+2026-05-16 12:12:29,632 - __main__ - INFO - Data loaded: 87292 test samples
+2026-05-16 12:12:29,800 - __main__ - INFO - Application started
+2026-05-16 12:12:34,082 - __main__ - INFO - Application started
+2026-05-16 12:12:34,199 - __main__ - INFO - Scoring transaction 0
+2026-05-16 12:12:35,212 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE, Risk: HIGH, Latency: 0.1ms
+2026-05-16 12:12:49,048 - __main__ - INFO - Application started
+2026-05-16 12:12:52,033 - __main__ - INFO - Application started
+2026-05-16 12:12:56,478 - __main__ - INFO - Application started
+2026-05-16 12:12:56,548 - __main__ - INFO - Application started
+2026-05-16 12:12:57,795 - __main__ - INFO - Application started
+2026-05-16 12:12:57,915 - __main__ - INFO - Scoring transaction 57887
+2026-05-16 12:12:58,214 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE, Risk: HIGH, Latency: 0.1ms
+2026-05-16 12:13:02,114 - __main__ - INFO - Application started
+2026-05-16 12:13:03,728 - __main__ - INFO - Application started
+2026-05-16 12:13:03,843 - __main__ - INFO - Scoring transaction 57887
+2026-05-16 12:13:04,196 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE, Risk: HIGH, Latency: 0.1ms
+2026-05-16 12:24:01,459 - __main__ - INFO - Application started
+2026-05-16 12:24:03,639 - __main__ - INFO - Application started
+2026-05-16 12:24:03,792 - __main__ - INFO - Scoring transaction 57887
+2026-05-16 12:24:04,120 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE, Risk: HIGH, Latency: 0.1ms
+2026-05-16 12:24:06,825 - __main__ - INFO - Application started
+2026-05-16 12:24:11,711 - __main__ - INFO - Application started
+2026-05-16 12:24:16,421 - __main__ - INFO - Application started
+2026-05-16 12:24:17,304 - __main__ - INFO - Application started
+2026-05-16 12:24:36,558 - __main__ - INFO - Application started
+2026-05-16 12:24:38,290 - __main__ - INFO - Application started
+2026-05-16 12:24:38,418 - __main__ - INFO - Scoring transaction 57887
+2026-05-16 12:24:38,743 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE, Risk: HIGH, Latency: 0.1ms
+2026-05-16 12:28:39,067 - __main__ - INFO - Application started
+2026-05-16 12:28:44,108 - __main__ - INFO - Application started
+2026-05-16 12:28:45,005 - __main__ - INFO - Application started
+2026-05-16 12:28:56,404 - __main__ - INFO - Application started
+2026-05-16 12:28:58,271 - __main__ - INFO - Application started
+2026-05-16 12:29:01,320 - __main__ - INFO - Application started
+2026-05-16 12:29:02,973 - __main__ - INFO - Application started
+2026-05-16 12:29:17,759 - __main__ - INFO - Application started
+2026-05-16 12:29:19,557 - __main__ - INFO - Application started
+2026-05-16 12:29:27,490 - __main__ - INFO - Application started
+2026-05-16 12:37:19,207 - __main__ - INFO - Application started
+2026-05-16 13:03:50,250 - helpers.loaders - INFO - Loading models...
+2026-05-16 13:03:50,261 - helpers.loaders - INFO - Models loaded: 843 trees, 460 features
+2026-05-16 13:03:50,262 - helpers.loaders - INFO - Loading data...
+2026-05-16 13:03:52,203 - helpers.loaders - INFO - Data loaded: 87292 test samples
+2026-05-16 13:03:52,380 - __main__ - INFO - Application started
+2026-05-16 13:03:58,887 - __main__ - INFO - Application started
+2026-05-16 13:03:59,902 - __main__ - INFO - Application started
+2026-05-16 13:04:10,482 - __main__ - INFO - Application started
+2026-05-16 13:04:10,602 - __main__ - INFO - Scoring transaction 0
+2026-05-16 13:04:10,906 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE | Risk: HIGH | 0.1 ms
+2026-05-16 13:04:44,542 - __main__ - INFO - Application started
+2026-05-16 13:04:44,684 - __main__ - INFO - Scoring transaction 0
+2026-05-16 13:04:44,982 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE | Risk: HIGH | 0.1 ms
+2026-05-16 13:04:45,318 - __main__ - INFO - Application started
+2026-05-16 13:04:45,432 - __main__ - INFO - Scoring transaction 0
+2026-05-16 13:04:45,728 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE | Risk: HIGH | 0.1 ms
+2026-05-16 13:10:41,503 - helpers.loaders - INFO - Loading models...
+2026-05-16 13:10:41,631 - helpers.loaders - INFO - Models loaded: 843 trees, 460 features
+2026-05-16 13:10:41,632 - helpers.loaders - INFO - Loading data...
+2026-05-16 13:10:43,617 - helpers.loaders - INFO - Data loaded: 87292 test samples
+2026-05-16 13:10:43,784 - __main__ - INFO - Application started
+2026-05-16 13:10:51,257 - __main__ - INFO - Application started
+2026-05-16 13:10:51,382 - __main__ - INFO - Scoring transaction 0
+2026-05-16 13:10:52,404 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE | Risk: HIGH | 0.1 ms
+2026-05-16 13:11:52,830 - __main__ - INFO - Application started
+2026-05-16 13:11:54,009 - __main__ - INFO - Application started
+2026-05-16 13:11:54,795 - __main__ - INFO - Application started
+2026-05-16 13:11:58,885 - __main__ - INFO - Application started
+2026-05-16 13:11:58,985 - __main__ - INFO - Scoring transaction 0
+2026-05-16 13:11:59,292 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE | Risk: HIGH | 0.1 ms
+2026-05-16 13:12:01,461 - __main__ - INFO - Application started
+2026-05-16 13:12:03,289 - __main__ - INFO - Application started
+2026-05-16 13:12:03,410 - __main__ - INFO - Scoring transaction 0
+2026-05-16 13:12:03,711 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE | Risk: HIGH | 0.1 ms
+2026-05-16 13:17:50,344 - __main__ - INFO - Application started
+2026-05-16 13:17:53,742 - __main__ - INFO - Application started
+2026-05-16 13:17:53,867 - __main__ - INFO - Scoring transaction 0
+2026-05-16 13:17:54,170 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE | Risk: HIGH | 0.1 ms
+2026-05-16 13:18:07,207 - __main__ - INFO - Application started
+2026-05-16 13:18:08,692 - __main__ - INFO - Application started
+2026-05-16 13:18:09,359 - __main__ - INFO - Application started
+2026-05-16 13:18:14,071 - __main__ - INFO - Application started
+2026-05-16 13:18:16,725 - __main__ - INFO - Application started
+2026-05-16 13:18:17,740 - __main__ - INFO - Application started
+2026-05-16 13:20:01,678 - __main__ - INFO - Application started
+2026-05-16 13:20:04,603 - __main__ - INFO - Application started
+2026-05-16 13:20:05,191 - __main__ - INFO - Application started
+2026-05-16 13:20:08,058 - __main__ - INFO - Application started
+2026-05-16 13:20:09,022 - __main__ - INFO - Application started
+2026-05-16 13:20:15,557 - __main__ - INFO - Application started
+2026-05-16 13:20:16,374 - __main__ - INFO - Application started
+2026-05-16 13:20:19,261 - __main__ - INFO - Application started
+2026-05-16 13:20:19,990 - __main__ - INFO - Application started
+2026-05-16 13:20:21,973 - __main__ - INFO - Application started
