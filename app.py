@@ -154,13 +154,13 @@ def _render_pipeline(assessment, decision_keyword: str) -> None:
 # SIDEBAR
 # ============================================================================
 
-def _render_sidebar() -> str:
+def _render_sidebar(models: dict) -> str:
     with st.sidebar:
         st.markdown(
             '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">'
             '<span style="width:12px;height:12px;background:#E24B4A;border-radius:50%;'
             'display:inline-block;flex-shrink:0;"></span>'
-            '<span style="font-size:18px;font-weight:700;">Fraud Detection</span>'
+            '<span style="font-size:18px;font-weight:700;">Fraud Intelligence System</span>'
             '</div>',
             unsafe_allow_html=True,
         )
@@ -172,13 +172,14 @@ def _render_sidebar() -> str:
             format_func=lambda m: "Adaptive (score-gated)" if m == "adaptive" else "All tools (always)",
             help="Adaptive skips tools when the ML score is already high/low confidence.",
         )
+        auc_str = f"{models['auc']:.3f}" if models.get("auc") else "N/A"
         st.markdown("**System Status**", unsafe_allow_html=False)
         st.markdown(f"""
 <div style="font-size:13px; line-height:2; color:var(--text-color);">
   <div>🟢 &nbsp;Models &nbsp;<span style="color:#6b7280;">ready</span></div>
   <div>🟢 &nbsp;Data &nbsp;<span style="color:#6b7280;">ready</span></div>
   <div style="margin-top:8px; color:#6b7280; font-size:12px;">
-    AUC <strong style="color:inherit;">0.92</strong> · LightGBM
+    AUC <strong style="color:inherit;">{auc_str}</strong> · LightGBM
   </div>
   <div style="color:#6b7280; font-size:12px;">
     Scored &nbsp;<strong style="color:inherit;">{len(st.session_state.history)}</strong> transactions
@@ -193,6 +194,7 @@ def _render_sidebar() -> str:
 # ============================================================================
 
 def _tab_score_transaction(data: dict, models: dict, tool_mode: str) -> None:
+    auc_str = f"{models['auc']:.3f}" if models.get("auc") else "N/A"
     st.markdown(
         f'<div style="display:flex; align-items:center; gap:12px; padding:10px 0 16px; '
         f'border-bottom:1px solid #e5e7eb; margin-bottom:16px;">'
@@ -202,7 +204,7 @@ def _tab_score_transaction(data: dict, models: dict, tool_mode: str) -> None:
         f'<span style="background:#dcfce7; color:#166534; font-size:11px; font-weight:500;'
         f'padding:2px 10px; border-radius:20px; margin-left:4px;">{tool_mode}</span>'
         f'<span style="margin-left:auto; font-size:12px; color:#9ca3af;">'
-        f'LightGBM · v1.0 · 0.92 AUC</span>'
+        f'LightGBM · v1.0 · {auc_str} AUC</span>'
         f'</div>',
         unsafe_allow_html=True,
     )
@@ -259,7 +261,7 @@ div[data-testid="stButton"] > button:hover {
                 fraud_score = ml_output["fraud_score"]
 
                 tool_results = investigate_transaction(
-                    transaction_raw, data["test_raw"],
+                    transaction_raw, data["hist_raw"],
                     fraud_score=fraud_score, mode=tool_mode,
                 )
                 assessment = run_agents(
@@ -438,6 +440,7 @@ def _tab_batch_evaluation(data: dict, models: dict, tool_mode: str) -> None:
                 agent_rows = run_agent_batch(
                     idx, cal_scores, y_sample,
                     raw_df=data["test_raw"],
+                    hist_df=data["hist_raw"],
                     tool_mode=tool_mode,
                     score_to_label_fn=score_to_label,
                     progress_callback=_update,
@@ -757,10 +760,11 @@ def _tab_settings(data: dict, models: dict, importance_df: pd.DataFrame) -> None
         else:
             st.error(f"❌ {name}: {path} (not found)")
     st.divider()
+    auc_str = f"{models['auc']:.3f}" if models.get("auc") else "N/A"
     st.subheader("About")
-    st.write("""
+    st.write(f"""
     Production-grade fraud detection system:
-    - LightGBM model trained on IEEE-CIS dataset (0.92 AUC)
+    - LightGBM model trained on IEEE-CIS dataset ({auc_str} AUC)
     - 4-agent reasoning pipeline (MLAnalyst → TransactionInvestigator → RiskAssessor → DecisionExplainer)
     - Adaptive tool selection with latency budgeting
     - Real-time scoring and batch evaluation
@@ -803,7 +807,7 @@ def main() -> None:
     data = data_result
     logger.info("Application started")
 
-    tool_mode = _render_sidebar()
+    tool_mode = _render_sidebar(models)
 
     tabs = st.tabs(["Score Transaction", "Batch Evaluation", "Analytics", "Logs", "Settings"])
     with tabs[0]:

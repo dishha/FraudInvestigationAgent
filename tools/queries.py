@@ -329,17 +329,19 @@ class EmailDomainChecker:
     def __init__(self, all_transactions_df: pd.DataFrame):
         self.df = all_transactions_df
     
-    def check(self, email_domain: str) -> ToolResult:
+    def check(self, email_domain: str, current_txn_time: Optional[int] = None) -> ToolResult:
         """
         Check email domain reputation.
-        
+
         Args:
             email_domain: P_emaildomain from transaction
-        
+            current_txn_time: TransactionDT of the transaction being scored.
+                Only transactions BEFORE this time are used, preventing future-data leakage.
+
         Returns:
             ToolResult with domain metrics
         """
-        
+
         try:
             if pd.isna(email_domain) or email_domain == '':
                 return ToolResult(
@@ -351,7 +353,7 @@ class EmailDomainChecker:
                     data_points=0,
                     error="Email domain is missing"
                 )
-            
+
             # Check domain reputation
             if email_domain.lower() in self.HIGH_RISK_DOMAINS:
                 return ToolResult(
@@ -371,9 +373,11 @@ class EmailDomainChecker:
                     confidence=0.95,
                     data_points=0
                 )
-            
-            # Get domain statistics from transaction history
+
+            # Get domain statistics from transaction history — only prior transactions.
             domain_txns = self.df[self.df['P_emaildomain'] == email_domain]
+            if current_txn_time is not None:
+                domain_txns = domain_txns[domain_txns['TransactionDT'] < current_txn_time]
             
             if len(domain_txns) == 0:
                 return ToolResult(

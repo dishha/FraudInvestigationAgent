@@ -51,7 +51,8 @@ class ToolExecutor:
         # Tool 3: Email Domain
         try:
             results['email'] = self.email_checker.check(
-                email_domain=transaction.get('P_emaildomain')
+                email_domain=transaction.get('P_emaildomain'),
+                current_txn_time=transaction['TransactionDT'],
             )
         except Exception as e:
             results['email'] = ToolResult(
@@ -84,7 +85,8 @@ class ToolExecutor:
                 current_txn_time=transaction['TransactionDT']
             ),
             'email': lambda: self.email_checker.check(
-                email_domain=transaction.get('P_emaildomain')
+                email_domain=transaction.get('P_emaildomain'),
+                current_txn_time=transaction['TransactionDT'],
             ),
             'device': lambda: self.device_checker.check(
                 device_id=transaction.get('DeviceInfo'),

@@ -45,12 +45,15 @@ def run_agent_batch(
     cal_scores: np.ndarray,
     y_sample: np.ndarray,
     raw_df: pd.DataFrame,
+    hist_df: pd.DataFrame,
     tool_mode: str,
     score_to_label_fn: Callable[[float], str],
     progress_callback: Callable[[int, int], None] | None = None,
 ) -> list[dict]:
     """Run the full 4-agent pipeline for each sampled transaction.
 
+    hist_df must be the train+val historical data — it is passed to the
+    investigation tools so they never touch test-set labels.
     progress_callback(completed, total) is called after each transaction.
     Returns rows suitable for pd.DataFrame().
     """
@@ -61,7 +64,7 @@ def run_agent_batch(
         ml_out = {"fraud_score": float(cal_score), "shap_values": None, "feature_importance": []}
         try:
             tool_res = investigate_transaction(
-                txn_raw, raw_df, fraud_score=float(cal_score), mode=tool_mode
+                txn_raw, hist_df, fraud_score=float(cal_score), mode=tool_mode
             )
             assessment = run_agents(
                 transaction=txn_raw.to_dict(), ml_output=ml_out, tool_results=tool_res

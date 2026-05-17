@@ -148,3 +148,57 @@
 2026-05-16 13:20:19,261 - __main__ - INFO - Application started
 2026-05-16 13:20:19,990 - __main__ - INFO - Application started
 2026-05-16 13:20:21,973 - __main__ - INFO - Application started
+2026-05-16 20:51:11,493 - helpers.loaders - INFO - Loading models...
+2026-05-16 20:51:11,609 - helpers.loaders - INFO - Models loaded: 843 trees, 460 features
+2026-05-16 20:51:11,610 - helpers.loaders - INFO - Loading data...
+2026-05-16 20:51:14,764 - helpers.loaders - INFO - Data loaded: 87292 test samples, 502264 historical samples for agent context
+2026-05-16 20:51:14,915 - __main__ - INFO - Application started
+2026-05-16 20:51:18,189 - __main__ - INFO - Application started
+2026-05-16 20:51:18,243 - __main__ - INFO - Application started
+2026-05-16 20:51:19,239 - __main__ - INFO - Application started
+2026-05-16 20:51:19,311 - __main__ - INFO - Scoring transaction 51614
+2026-05-16 20:51:20,149 - __main__ - INFO - Application started
+2026-05-16 20:51:20,288 - __main__ - INFO - Scoring transaction 51614
+2026-05-16 20:51:20,566 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE | Risk: HIGH | 0.1 ms
+2026-05-16 20:51:35,472 - __main__ - INFO - Application started
+2026-05-16 20:51:35,547 - __main__ - INFO - Application started
+2026-05-16 20:51:36,585 - __main__ - INFO - Application started
+2026-05-16 20:51:36,647 - __main__ - INFO - Scoring transaction 81554
+2026-05-16 20:51:36,924 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE | Risk: HIGH | 0.1 ms
+2026-05-16 20:51:47,890 - __main__ - INFO - Application started
+2026-05-16 20:51:47,962 - __main__ - INFO - Application started
+2026-05-16 20:51:48,935 - __main__ - INFO - Application started
+2026-05-16 20:51:48,990 - __main__ - INFO - Scoring transaction 50648
+2026-05-16 20:51:50,473 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE | Risk: HIGH | 0.2 ms
+2026-05-16 20:53:22,291 - __main__ - INFO - Application started
+2026-05-16 20:53:24,139 - __main__ - INFO - Application started
+2026-05-16 20:59:10,947 - helpers.loaders - INFO - Loading models...
+2026-05-16 20:59:10,954 - helpers.loaders - INFO - Models loaded: 843 trees, 460 features
+2026-05-16 20:59:10,954 - __main__ - INFO - Application started
+2026-05-16 20:59:13,177 - __main__ - INFO - Application started
+2026-05-16 20:59:13,253 - __main__ - INFO - Application started
+2026-05-16 20:59:15,358 - __main__ - INFO - Application started
+2026-05-16 20:59:15,431 - __main__ - INFO - Application started
+2026-05-16 20:59:17,958 - __main__ - INFO - Application started
+2026-05-16 20:59:18,039 - __main__ - INFO - Scoring transaction 27523
+2026-05-16 20:59:18,307 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE | Risk: HIGH | 0.1 ms
+2026-05-16 20:59:28,092 - __main__ - INFO - Application started
+2026-05-16 20:59:28,166 - __main__ - INFO - Application started
+2026-05-16 20:59:29,074 - __main__ - INFO - Application started
+2026-05-16 20:59:29,149 - __main__ - INFO - Scoring transaction 15583
+2026-05-16 20:59:29,422 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE | Risk: HIGH | 0.1 ms
+2026-05-16 20:59:32,209 - __main__ - INFO - Application started
+2026-05-16 20:59:32,280 - __main__ - INFO - Application started
+2026-05-16 20:59:33,675 - __main__ - INFO - Application started
+2026-05-16 20:59:33,749 - __main__ - INFO - Scoring transaction 31316
+2026-05-16 20:59:34,017 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE | Risk: HIGH | 0.1 ms
+2026-05-16 20:59:39,393 - __main__ - INFO - Application started
+2026-05-16 20:59:39,462 - __main__ - INFO - Application started
+2026-05-16 20:59:40,408 - __main__ - INFO - Application started
+2026-05-16 20:59:40,498 - __main__ - INFO - Scoring transaction 79781
+2026-05-16 20:59:40,770 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE | Risk: HIGH | 0.1 ms
+2026-05-16 21:01:28,242 - __main__ - INFO - Application started
+2026-05-16 21:01:28,314 - __main__ - INFO - Application started
+2026-05-16 21:01:29,321 - __main__ - INFO - Application started
+2026-05-16 21:01:29,380 - __main__ - INFO - Scoring transaction 30511
+2026-05-16 21:01:29,652 - __main__ - INFO - Decision: 🟡 SOFT_DECLINE | Risk: HIGH | 0.1 ms

@@ -1,4 +1,5 @@
 """Cached resource loaders for the Streamlit app."""
+import json
 import logging
 import pickle
 
@@ -18,8 +19,22 @@ def load_models() -> dict:
             calibrator = pickle.load(f)
         with open("model/feature_names.pkl", "rb") as f:
             feature_names = pickle.load(f)
+        metrics = {}
+        try:
+            with open("model/metrics.json") as f:
+                metrics = json.load(f)
+        except Exception:
+            pass
         logger.info("Models loaded: %d trees, %d features", model.num_trees(), len(feature_names))
-        return {"model": model, "calibrator": calibrator, "feature_names": feature_names, "success": True}
+        return {
+            "model": model,
+            "calibrator": calibrator,
+            "feature_names": feature_names,
+            "auc": metrics.get("auc"),
+            "pr_auc": metrics.get("pr_auc"),
+            "brier": metrics.get("brier"),
+            "success": True,
+        }
     except Exception as exc:
         logger.error("Error loading models: %s", exc)
         return {"success": False, "error": str(exc)}
@@ -33,8 +48,22 @@ def load_data() -> dict:
             X_test, y_test, _ = pickle.load(f)
         with open("data/ieee_prepared.pkl", "rb") as f:
             data_dict = pickle.load(f)
-        logger.info("Data loaded: %d test samples", len(X_test))
-        return {"X_test": X_test, "y_test": y_test, "test_raw": data_dict["test"], "success": True}
+        # train+val are temporally prior to the test set — use them as the
+        # historical context passed to investigation tools so that agent
+        # queries never touch test labels.
+        import pandas as pd
+        hist_raw = pd.concat([data_dict["train"], data_dict["val"]], ignore_index=True)
+        logger.info(
+            "Data loaded: %d test samples, %d historical samples for agent context",
+            len(X_test), len(hist_raw),
+        )
+        return {
+            "X_test": X_test,
+            "y_test": y_test,
+            "test_raw": data_dict["test"],
+            "hist_raw": hist_raw,
+            "success": True,
+        }
     except Exception as exc:
         logger.error("Error loading data: %s", exc)
         return {"success": False, "error": str(exc)}
