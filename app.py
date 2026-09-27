@@ -10,6 +10,9 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -22,6 +25,8 @@ from config import (
     DECISION_COLOR,
     LOG_DIR,
     LOG_FILE,
+    ML_FASTPATH_APPROVE,
+    ML_FASTPATH_BLOCK,
     REVIEW_THRESHOLD,
     SOFT_DECLINE_THRESHOLD,
     score_to_label,
@@ -35,6 +40,7 @@ from helpers.decision_strategy import (
     threshold_decision_from_score,
 )
 from helpers.loaders import load_data, load_feature_importance, load_models
+from helpers.rules_engine import HardRulesEngine
 from scripts.feature_engineering import transform_features_for_scoring
 from scripts.fraud_investigation_agents import investigate_transaction, run_agents
 from scripts.ml_pipeline import score_with_ml
@@ -160,7 +166,7 @@ def _render_sidebar(models: dict) -> str:
             '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">'
             '<span style="width:12px;height:12px;background:#E24B4A;border-radius:50%;'
             'display:inline-block;flex-shrink:0;"></span>'
-            '<span style="font-size:18px;font-weight:700;">Fraud Intelligence System</span>'
+            '<span style="font-size:18px;font-weight:700;">Fraud Intelligence Engine</span>'
             '</div>',
             unsafe_allow_html=True,
         )
@@ -193,7 +199,7 @@ def _render_sidebar(models: dict) -> str:
 # TAB 1 — SCORE TRANSACTION
 # ============================================================================
 
-def _tab_score_transaction(data: dict, models: dict, tool_mode: str) -> None:
+def _tab_score_transaction(data: dict, models: dict, tool_mode: str, rules_engine: HardRulesEngine) -> None:
     auc_str = f"{models['auc']:.3f}" if models.get("auc") else "N/A"
     st.markdown(
         f'<div style="display:flex; align-items:center; gap:12px; padding:10px 0 16px; '
@@ -257,50 +263,110 @@ div[data-testid="stButton"] > button:hover {
         logger.info("Scoring transaction %d", test_idx)
         with st.spinner("Scoring transaction..."):
             try:
+                import time as _time
+                _tx_start = _time.time()
+
+                # Layer 0: Hard Rules Engine — runs before ML, cannot be overridden
+                rule_result = rules_engine.evaluate(transaction_raw)
+
+                # Layer 1: ML scoring (always runs for the fraud score display)
                 ml_output = score_with_ml(transaction_features, models)
                 fraud_score = ml_output["fraud_score"]
 
-                tool_results = investigate_transaction(
-                    transaction_raw, data["hist_raw"],
-                    fraud_score=fraud_score, mode=tool_mode,
-                )
-                assessment = run_agents(
-                    transaction=transaction_raw.to_dict(),
-                    ml_output=ml_output,
-                    tool_results=tool_results,
-                )
+                ml_fastpath = None  # set by Layer 1 if score is in a confident tail
+                threshold_overrode_agent = False
 
-                decision = assessment.decision
-                confidence = assessment.confidence
-                risk_level = assessment.risk_level
-                risk_score = assessment.risk_score
-
-                decision_label = normalize_decision_label(decision)
-                threshold_label = threshold_decision_from_score(
-                    fraud_score, BLOCK_THRESHOLD, REVIEW_THRESHOLD, SOFT_DECLINE_THRESHOLD,
-                )
-                final_decision_label = merge_agent_and_threshold_decision(decision_label, threshold_label)
-                decision_keyword = extract_decision_keyword(final_decision_label)
-
-                if final_decision_label != decision_label:
+                if rule_result.triggered:
+                    # Layer 0 — Hard rule fires; decision is final
                     logger.warning(
-                        "Threshold override: agent=%s threshold=%s final=%s",
-                        decision_label, threshold_label, final_decision_label,
+                        "Hard rule triggered: %s | %s",
+                        rule_result.rule_name, rule_result.evidence,
                     )
+                    final_decision_label = "🔴 BLOCK"
+                    decision_keyword = "BLOCK"
+                    decision_label = final_decision_label
+                    decision = final_decision_label
+                    risk_level = "CRITICAL"
+                    confidence = 1.0
+                    risk_score = 1.0
+                    tool_results = {}
+                    assessment = None
+                else:
+                    rule_result = None
 
-                if decision is None or extract_decision_keyword(decision_label) not in {"APPROVE", "SOFT_DECLINE", "REVIEW", "BLOCK"}:
-                    logger.error("Agent failure — falling back to threshold decision")
-                    final_decision_label = threshold_label
-                    decision_keyword = final_decision_label.split()[-1]
-                    risk_level, confidence = {
-                        "BLOCK":        ("CRITICAL", 0.95),
-                        "REVIEW":       ("HIGH",     0.90),
-                        "SOFT_DECLINE": ("MEDIUM",   0.80),
-                    }.get(decision_keyword, ("LOW", 0.85))
+                    # Layer 1 — ML Score Fast-Path: skip agents for confident tails
+                    # "all tools" mode bypasses the approve fast-path so agents always run.
+                    if fraud_score >= ML_FASTPATH_BLOCK:
+                        ml_fastpath = f"score {fraud_score:.1%} ≥ {ML_FASTPATH_BLOCK:.0%} — agents skipped"
+                        logger.info("ML fast-path BLOCK: %.3f", fraud_score)
+                        final_decision_label = "\U0001f534 BLOCK"
+                        decision_keyword = "BLOCK"
+                        decision_label = final_decision_label
+                        decision = final_decision_label
+                        risk_level = "CRITICAL"
+                        confidence = 0.95
+                        risk_score = fraud_score
+                        tool_results = {}
+                        assessment = None
+                    elif fraud_score < ML_FASTPATH_APPROVE and tool_mode != "all":
+                        ml_fastpath = f"score {fraud_score:.1%} < {ML_FASTPATH_APPROVE:.0%} — agents skipped"
+                        logger.info("ML fast-path APPROVE: %.3f", fraud_score)
+                        final_decision_label = "\U0001f7e2 APPROVE"
+                        decision_keyword = "APPROVE"
+                        decision_label = final_decision_label
+                        decision = final_decision_label
+                        risk_level = "LOW"
+                        confidence = 0.95
+                        risk_score = fraud_score
+                        tool_results = {}
+                        assessment = None
+                    else:
+                        # Layers 2–3: agentic investigation for scores in 0.15–0.92
+                        tool_results = investigate_transaction(
+                            transaction_raw, data["hist_raw"],
+                            fraud_score=fraud_score, mode=tool_mode,
+                        )
+                        assessment = run_agents(
+                            transaction=transaction_raw.to_dict(),
+                            ml_output=ml_output,
+                            tool_results=tool_results,
+                        )
 
-                decision_label = final_decision_label
-                decision = final_decision_label
+                        decision = assessment.decision
+                        confidence = assessment.confidence
+                        risk_level = assessment.risk_level
+                        risk_score = assessment.risk_score
 
+                        decision_label = normalize_decision_label(decision)
+                        threshold_label = threshold_decision_from_score(
+                            fraud_score, BLOCK_THRESHOLD, REVIEW_THRESHOLD, SOFT_DECLINE_THRESHOLD,
+                        )
+                        final_decision_label = merge_agent_and_threshold_decision(decision_label, threshold_label)
+                        decision_keyword = extract_decision_keyword(final_decision_label)
+
+                        threshold_overrode_agent = final_decision_label != decision_label
+                        if threshold_overrode_agent:
+                            logger.warning(
+                                "Threshold override: agent=%s threshold=%s final=%s",
+                                decision_label, threshold_label, final_decision_label,
+                            )
+
+                        if decision is None or extract_decision_keyword(decision_label) not in {"APPROVE", "SOFT_DECLINE", "REVIEW", "BLOCK"}:
+                            logger.error("Agent failure — falling back to threshold decision")
+                            final_decision_label = threshold_label
+                            decision_keyword = final_decision_label.split()[-1]
+                            risk_level, confidence = {
+                                "BLOCK":        ("CRITICAL", 0.95),
+                                "REVIEW":       ("HIGH",     0.90),
+                                "SOFT_DECLINE": ("MEDIUM",   0.80),
+                            }.get(decision_keyword, ("LOW", 0.85))
+
+                        decision_label = final_decision_label
+                        decision = final_decision_label
+
+                _total_ms = (_time.time() - _tx_start) * 1000
+                _latency = assessment.execution_time_ms if assessment else _total_ms
+                _cost = assessment.agent_cost_usd if assessment else 0.0
                 st.session_state.history.append({
                     "timestamp":      datetime.now(),
                     "transaction_id": test_idx,
@@ -308,18 +374,19 @@ div[data-testid="stButton"] > button:hover {
                     "decision":       decision_keyword,
                     "risk_level":     risk_level,
                     "risk_score":     risk_score,
-                    "latency_ms":     assessment.execution_time_ms,
+                    "latency_ms":     _latency,
                     "amount":         amount,
                     "actual":         actual_label,
                 })
-                logger.info("Decision: %s | Risk: %s | %.1f ms", decision, risk_level, assessment.execution_time_ms)
+                logger.info("Decision: %s | Risk: %s | %.1f ms | cost $%.4f", decision, risk_level, _latency, _cost)
 
                 st.subheader("Assessment Results")
-                res_col1, res_col2, res_col3, res_col4 = st.columns(4)
+                res_col1, res_col2, res_col3, res_col4, res_col5 = st.columns(5)
                 res_col1.metric("Fraud score", f"{fraud_score:.1%}")
                 res_col2.metric("Risk level", risk_level)
                 res_col3.metric("Confidence", f"{confidence:.0%}")
-                res_col4.metric("Latency", f"{assessment.execution_time_ms:.1f} ms")
+                res_col4.metric("Latency", f"{_latency:.1f} ms")
+                res_col5.metric("Agent cost", f"${_cost:.4f}")
                 _is_correct = (actual_label == 1) == (decision.split()[-1] in {"BLOCK", "REVIEW"})
                 _badge_color = "#dcfce7" if _is_correct else "#fee2e2"
                 _badge_text_color = "#166534" if _is_correct else "#991b1b"
@@ -331,6 +398,23 @@ div[data-testid="stButton"] > button:hover {
   {"✓" if _is_correct else "✗"} &nbsp;{_badge_label}
 </div>
 """, unsafe_allow_html=True)
+                if rule_result:
+                    st.markdown(
+                        f'<div style="background:#FEF3C7; border:1px solid #F59E0B; border-radius:8px; '
+                        f'padding:12px 16px; margin:8px 0 4px; font-size:13px;">'
+                        f'<strong>&#9889; Hard Rule Triggered &mdash; {rule_result.rule_name}</strong><br>'
+                        f'{rule_result.evidence}'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+                elif ml_fastpath:
+                    st.markdown(
+                        f'<div style="background:#EFF6FF; border:1px solid #93C5FD; border-radius:8px; '
+                        f'padding:12px 16px; margin:8px 0 4px; font-size:13px;">'
+                        f'<strong>&#9889; ML Fast-Path</strong> &mdash; {ml_fastpath}'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
                 _decision_banner(decision_keyword, fraud_score)
 
                 if ml_output.get("shap_values") is not None:
@@ -361,26 +445,46 @@ div[data-testid="stButton"] > button:hover {
                         st.plotly_chart(fig, use_container_width=True)
 
                 st.subheader("Decision Explanation")
-                explanation = assessment.customer_explanation or ""
-                if explanation.strip():
-                    st.info(explanation)
-                else:
+                if rule_result:
+                    st.error(rule_result.evidence)
+                elif ml_fastpath:
                     st.info(fallback_explanation_decision(decision_keyword, fraud_score))
+                else:
+                    explanation = assessment.customer_explanation or ""
+                    if explanation.strip() and not threshold_overrode_agent:
+                        st.info(explanation)
+                    else:
+                        st.info(fallback_explanation_decision(decision_keyword, fraud_score))
 
                 st.subheader("Agent Pipeline")
-                _render_pipeline(assessment, decision_keyword)
+                if rule_result:
+                    st.info("Agent investigation bypassed — hard rule decision is final.")
+                elif ml_fastpath:
+                    st.info(f"Agent investigation bypassed — ML Fast-Path ({ml_fastpath}).")
+                else:
+                    _render_pipeline(assessment, decision_keyword)
 
                 with st.expander("Raw diagnostics", expanded=False):
-                    st.write("**Agent execution mode:**", "MOCK" if investigator.MOCK_MODE else "REAL")
-                    st.write("**Agent recommendation:**", str(assessment.decision))
-                    st.write("**Displayed decision:**", decision_label)
-                    st.metric("Latency", f"{assessment.execution_time_ms:.1f} ms")
-                    st.write("**ML output**");      st.json(ml_output)
-                    st.write("**Investigation findings**"); st.json(assessment.investigation_findings)
-                    st.write("**Risk assessment**");       st.json(assessment.risk_assessment)
-                    st.write("**Agent reasoning**");       st.json(assessment.reasoning_details)
-                    if investigator.MOCK_MODE:
-                        st.warning("Mock mode — agent responses are simulated.")
+                    if rule_result:
+                        st.write("**Decision path:**", "HARD RULE (Layer 0)")
+                        st.write("**Rule:**", rule_result.rule_name)
+                        st.write("**Evidence:**", rule_result.evidence)
+                        st.write("**ML output**"); st.json(ml_output)
+                    elif ml_fastpath:
+                        st.write("**Decision path:**", "ML FAST-PATH (Layer 1)")
+                        st.write("**Reason:**", ml_fastpath)
+                        st.write("**ML output**"); st.json(ml_output)
+                    else:
+                        st.write("**Agent execution mode:**", "MOCK" if investigator.MOCK_MODE else "REAL")
+                        st.write("**Agent recommendation:**", str(assessment.decision))
+                        st.write("**Displayed decision:**", decision_label)
+                        st.metric("Latency", f"{assessment.execution_time_ms:.1f} ms")
+                        st.write("**ML output**");      st.json(ml_output)
+                        st.write("**Investigation findings**"); st.json(assessment.investigation_findings)
+                        st.write("**Risk assessment**");       st.json(assessment.risk_assessment)
+                        st.write("**Agent reasoning**");       st.json(assessment.reasoning_details)
+                        if investigator.MOCK_MODE:
+                            st.warning("Mock mode — agent responses are simulated.")
 
             except Exception as exc:
                 logger.error("Error scoring: %s", exc)
@@ -460,9 +564,8 @@ def _tab_batch_evaluation(data: dict, models: dict, tool_mode: str) -> None:
 
         m = compute_batch_metrics(y_true, scores, score_to_label)
 
-        # ── Model metrics ────────────────────────────────────────────────────
+        # ── Key metrics ───────────────────────────────────────────────────────
         st.divider()
-        st.subheader("Model Metrics")
         c1, c2, c3, c4, c5 = st.columns(5)
         c1.metric("AUC-ROC",       f"{m['auc']:.3f}")
         c2.metric("Avg Precision", f"{m['ap']:.3f}")
@@ -470,9 +573,7 @@ def _tab_batch_evaluation(data: dict, models: dict, tool_mode: str) -> None:
         c4.metric("Recall",        f"{m['recall']:.3f}")
         c5.metric("F1",            f"{m['f1']:.3f}")
 
-        # ── Score distributions ───────────────────────────────────────────────
-        st.divider()
-        st.subheader("Score Distributions")
+        # ── Score distribution (hero chart) ──────────────────────────────────
         fig_dist = go.Figure()
         fig_dist.add_trace(go.Histogram(x=scores[y_true == 0], name="Legitimate",
                                         opacity=0.65, marker_color="#2196F3", nbinsx=40))
@@ -486,40 +587,24 @@ def _tab_batch_evaluation(data: dict, models: dict, tool_mode: str) -> None:
             fig_dist.add_vline(x=thr, line_dash="dash", line_color=color,
                                annotation_text=label, annotation_position="top right")
         fig_dist.update_layout(barmode="overlay", title="Calibrated Fraud Score by Actual Class",
-                               xaxis_title="Fraud Score", yaxis_title="Count", height=350)
+                               xaxis_title="Fraud Score", yaxis_title="Count", height=320,
+                               margin=dict(t=40, b=0))
         st.plotly_chart(fig_dist, use_container_width=True)
 
-        # ── ROC + PR curves ───────────────────────────────────────────────────
-        col_roc, col_pr = st.columns(2)
+        # ── ROC + confusion matrix ────────────────────────────────────────────
+        col_roc, col_cm = st.columns(2)
         with col_roc:
-            st.subheader("ROC Curve")
             fig_roc = go.Figure()
             fig_roc.add_trace(go.Scatter(x=m["fpr"], y=m["tpr"], mode="lines",
                                          name=f"AUC={m['auc']:.3f}", line=dict(color="#4CAF50", width=2)))
             fig_roc.add_trace(go.Scatter(x=[0, 1], y=[0, 1], mode="lines",
                                          name="Random", line=dict(color="grey", dash="dash")))
-            fig_roc.update_layout(xaxis_title="FPR", yaxis_title="TPR", height=350,
-                                  xaxis=dict(range=[0, 1]), yaxis=dict(range=[0, 1]))
+            fig_roc.update_layout(title="ROC Curve", xaxis_title="FPR", yaxis_title="TPR", height=320,
+                                  xaxis=dict(range=[0, 1]), yaxis=dict(range=[0, 1]),
+                                  margin=dict(t=40, b=0))
             st.plotly_chart(fig_roc, use_container_width=True)
 
-        with col_pr:
-            st.subheader("Precision-Recall Curve")
-            fig_pr = go.Figure()
-            fig_pr.add_trace(go.Scatter(x=m["rec_arr"], y=m["prec_arr"], mode="lines",
-                                        name=f"AP={m['ap']:.3f}", line=dict(color="#9C27B0", width=2)))
-            base = y_true.mean()
-            fig_pr.add_hline(y=base, line_dash="dash", line_color="grey",
-                             annotation_text=f"Baseline ({base:.2f})")
-            fig_pr.update_layout(xaxis_title="Recall", yaxis_title="Precision", height=350,
-                                 xaxis=dict(range=[0, 1]), yaxis=dict(range=[0, 1]))
-            st.plotly_chart(fig_pr, use_container_width=True)
-
-        # ── Confusion matrix + threshold sweep ────────────────────────────────
-        st.divider()
-        col_cm, col_sweep = st.columns(2)
-
         with col_cm:
-            st.subheader("Confusion Matrix")
             cm_data = [[m["tn"], m["fp"]], [m["fn"], m["tp"]]]
             fig_cm = go.Figure(go.Heatmap(
                 z=cm_data, x=["Pred: Legit", "Pred: Flagged"],
@@ -528,40 +613,51 @@ def _tab_batch_evaluation(data: dict, models: dict, tool_mode: str) -> None:
                 text=[[str(v) for v in row] for row in cm_data],
                 texttemplate="%{text}", textfont={"size": 20},
             ))
-            fig_cm.update_layout(height=320)
+            fig_cm.update_layout(title="Confusion Matrix", height=320, margin=dict(t=40, b=0))
             st.plotly_chart(fig_cm, use_container_width=True)
 
-        with col_sweep:
-            st.subheader("Threshold Sweep")
-            sweep = m["sweep_df"]
-            fig_sweep = go.Figure()
-            fig_sweep.add_trace(go.Scatter(x=sweep["threshold"], y=sweep["precision"], mode="lines", name="Precision"))
-            fig_sweep.add_trace(go.Scatter(x=sweep["threshold"], y=sweep["recall"],    mode="lines", name="Recall"))
-            fig_sweep.add_trace(go.Scatter(x=sweep["threshold"], y=sweep["f1"],        mode="lines", name="F1",
-                                           line=dict(width=2, dash="dot")))
-            fig_sweep.add_trace(go.Scatter(x=sweep["threshold"], y=sweep["flag_rate"], mode="lines",
-                                           name="Flag rate", line=dict(dash="dash")))
-            for thr_val, thr_name in [
-                (BLOCK_THRESHOLD, "BLOCK"), (REVIEW_THRESHOLD, "REVIEW"), (SOFT_DECLINE_THRESHOLD, "SOFT_DECLINE"),
-            ]:
-                fig_sweep.add_vline(x=thr_val, line_dash="dash", line_color="grey", annotation_text=thr_name)
-            fig_sweep.update_layout(xaxis_title="Threshold", yaxis_title="Score",
-                                    yaxis=dict(range=[0, 1]), height=320)
-            st.plotly_chart(fig_sweep, use_container_width=True)
+        # ── Secondary analysis (collapsed by default) ─────────────────────────
+        with st.expander("Precision-Recall curve · Threshold sweep · Decision breakdown"):
+            col_pr, col_sweep = st.columns(2)
+            with col_pr:
+                fig_pr = go.Figure()
+                fig_pr.add_trace(go.Scatter(x=m["rec_arr"], y=m["prec_arr"], mode="lines",
+                                            name=f"AP={m['ap']:.3f}", line=dict(color="#9C27B0", width=2)))
+                base = y_true.mean()
+                fig_pr.add_hline(y=base, line_dash="dash", line_color="grey",
+                                 annotation_text=f"Baseline ({base:.2f})")
+                fig_pr.update_layout(title="Precision-Recall", xaxis_title="Recall",
+                                     yaxis_title="Precision", height=300,
+                                     xaxis=dict(range=[0, 1]), yaxis=dict(range=[0, 1]))
+                st.plotly_chart(fig_pr, use_container_width=True)
 
-        # ── Decision breakdown ────────────────────────────────────────────────
-        st.divider()
-        st.subheader("Decision Breakdown (threshold-based)")
-        label_counts = pd.Series(m["predicted_labels"]).value_counts().reset_index()
-        label_counts.columns = ["Decision", "Count"]
-        label_counts["% of sample"] = (label_counts["Count"] / len(m["predicted_labels"]) * 100).round(1)
-        st.dataframe(label_counts, use_container_width=True, hide_index=True)
+            with col_sweep:
+                sweep = m["sweep_df"]
+                fig_sweep = go.Figure()
+                fig_sweep.add_trace(go.Scatter(x=sweep["threshold"], y=sweep["precision"], mode="lines", name="Precision"))
+                fig_sweep.add_trace(go.Scatter(x=sweep["threshold"], y=sweep["recall"],    mode="lines", name="Recall"))
+                fig_sweep.add_trace(go.Scatter(x=sweep["threshold"], y=sweep["f1"],        mode="lines", name="F1",
+                                               line=dict(width=2, dash="dot")))
+                fig_sweep.add_trace(go.Scatter(x=sweep["threshold"], y=sweep["flag_rate"], mode="lines",
+                                               name="Flag rate", line=dict(dash="dash")))
+                for thr_val, thr_name in [
+                    (BLOCK_THRESHOLD, "BLOCK"), (REVIEW_THRESHOLD, "REVIEW"), (SOFT_DECLINE_THRESHOLD, "SOFT_DECLINE"),
+                ]:
+                    fig_sweep.add_vline(x=thr_val, line_dash="dash", line_color="grey", annotation_text=thr_name)
+                fig_sweep.update_layout(title="Threshold Sweep", xaxis_title="Threshold",
+                                        yaxis=dict(range=[0, 1]), height=300)
+                st.plotly_chart(fig_sweep, use_container_width=True)
+
+            label_counts = pd.Series(m["predicted_labels"]).value_counts().reset_index()
+            label_counts.columns = ["Decision", "Count"]
+            label_counts["% of sample"] = (label_counts["Count"] / len(m["predicted_labels"]) * 100).round(1)
+            st.dataframe(label_counts, use_container_width=True, hide_index=True)
 
         # ── Agent section ─────────────────────────────────────────────────────
         if agent_rows:
             agent_df = pd.DataFrame(agent_rows)
             st.divider()
-            st.subheader("Agent Reasoning Results")
+            st.subheader("Agent Results")
 
             valid = agent_df[agent_df["agent_decision"] != "ERROR"]
             agree = (valid["agent_decision"] == valid["threshold_decision"]).mean()
@@ -580,24 +676,23 @@ def _tab_batch_evaluation(data: dict, models: dict, tool_mode: str) -> None:
             a4.metric("Avg Confidence",  f"{avg_conf:.0%}")
             a5.metric("Avg Latency",     f"{avg_lat:.0f} ms")
             st.caption(
-                f"Agent–threshold agreement: **{agree:.0%}** of {len(valid)} transactions. "
-                f"Mode: **{'MOCK' if investigator.MOCK_MODE else 'REAL'}**."
+                f"Agent–threshold agreement: **{agree:.0%}** of {len(valid)} transactions · "
+                f"**{'MOCK' if investigator.MOCK_MODE else 'REAL'}** mode"
             )
 
             col_adec, col_agree = st.columns(2)
             with col_adec:
-                st.subheader("Agent Decision Distribution")
                 dec_counts = agent_df["agent_decision"].value_counts().reset_index()
                 dec_counts.columns = ["Decision", "Count"]
                 fig_adec = go.Figure(go.Bar(
                     x=dec_counts["Decision"], y=dec_counts["Count"],
                     marker_color=[DECISION_COLOR.get(d, "#9E9E9E") for d in dec_counts["Decision"]],
                 ))
-                fig_adec.update_layout(xaxis_title="Decision", yaxis_title="Count", height=320)
+                fig_adec.update_layout(title="Agent Decisions", xaxis_title="Decision",
+                                       yaxis_title="Count", height=300, margin=dict(t=40, b=0))
                 st.plotly_chart(fig_adec, use_container_width=True)
 
             with col_agree:
-                st.subheader("Agent vs Threshold Agreement")
                 labels = ["APPROVE", "SOFT_DECLINE", "REVIEW", "BLOCK"]
                 cross = pd.crosstab(agent_df["threshold_decision"], agent_df["agent_decision"])
                 cross = cross.reindex(index=labels, columns=labels, fill_value=0)
@@ -607,46 +702,47 @@ def _tab_batch_evaluation(data: dict, models: dict, tool_mode: str) -> None:
                     text=[[str(v) for v in row] for row in cross.values.tolist()],
                     texttemplate="%{text}",
                 ))
-                fig_cross.update_layout(xaxis_title="Agent decision", yaxis_title="Threshold decision", height=320)
+                fig_cross.update_layout(title="Agent vs Threshold", xaxis_title="Agent decision",
+                                        yaxis_title="Threshold decision", height=300, margin=dict(t=40, b=0))
                 st.plotly_chart(fig_cross, use_container_width=True)
 
-            col_scatter, col_lat = st.columns(2)
-            with col_scatter:
-                st.subheader("ML Score vs Agent Risk Score")
-                fig_scat = px.scatter(
-                    agent_df, x="fraud_score", y="risk_score",
+            with st.expander("Score correlation · Latency · Confidence"):
+                col_scatter, col_lat = st.columns(2)
+                with col_scatter:
+                    fig_scat = px.scatter(
+                        agent_df, x="fraud_score", y="risk_score",
+                        color="agent_decision", color_discrete_map=DECISION_COLOR,
+                        symbol="actual", symbol_map={0: "circle", 1: "x"},
+                        title="ML Score vs Agent Risk Score",
+                        labels={"fraud_score": "ML Fraud Score", "risk_score": "Agent Risk Score",
+                                "agent_decision": "Decision", "actual": "Actual"},
+                        height=320,
+                    )
+                    fig_scat.update_traces(marker=dict(size=8, opacity=0.75))
+                    st.plotly_chart(fig_scat, use_container_width=True)
+
+                with col_lat:
+                    fig_lat = px.histogram(
+                        agent_df[agent_df["latency_ms"] > 0],
+                        x="latency_ms", color="agent_decision",
+                        color_discrete_map=DECISION_COLOR, nbins=30,
+                        title="Latency Distribution",
+                        labels={"latency_ms": "Latency (ms)", "agent_decision": "Decision"},
+                        height=320,
+                    )
+                    fig_lat.update_layout(barmode="overlay")
+                    st.plotly_chart(fig_lat, use_container_width=True)
+
+                fig_box = px.box(
+                    agent_df[agent_df["agent_decision"] != "ERROR"],
+                    x="agent_decision", y="confidence",
                     color="agent_decision", color_discrete_map=DECISION_COLOR,
-                    symbol="actual", symbol_map={0: "circle", 1: "x"},
-                    labels={"fraud_score": "ML Fraud Score", "risk_score": "Agent Risk Score",
-                            "agent_decision": "Agent Decision", "actual": "Actual (0=legit, 1=fraud)"},
-                    height=350,
+                    points="all", title="Confidence by Decision",
+                    labels={"agent_decision": "Decision", "confidence": "Confidence"},
+                    height=300,
                 )
-                fig_scat.update_traces(marker=dict(size=8, opacity=0.75))
-                st.plotly_chart(fig_scat, use_container_width=True)
-
-            with col_lat:
-                st.subheader("Agent Latency Distribution")
-                fig_lat = px.histogram(
-                    agent_df[agent_df["latency_ms"] > 0],
-                    x="latency_ms", color="agent_decision",
-                    color_discrete_map=DECISION_COLOR, nbins=30,
-                    labels={"latency_ms": "Latency (ms)", "agent_decision": "Decision"},
-                    height=350,
-                )
-                fig_lat.update_layout(barmode="overlay")
-                st.plotly_chart(fig_lat, use_container_width=True)
-
-            st.subheader("Agent Confidence by Decision")
-            fig_box = px.box(
-                agent_df[agent_df["agent_decision"] != "ERROR"],
-                x="agent_decision", y="confidence",
-                color="agent_decision", color_discrete_map=DECISION_COLOR,
-                points="all",
-                labels={"agent_decision": "Decision", "confidence": "Confidence"},
-                height=320,
-            )
-            fig_box.update_layout(showlegend=False)
-            st.plotly_chart(fig_box, use_container_width=True)
+                fig_box.update_layout(showlegend=False)
+                st.plotly_chart(fig_box, use_container_width=True)
 
     else:
         st.info("Set a sample size and click **Run Evaluation** to start.")
@@ -805,13 +901,14 @@ def main() -> None:
 
     models = models_result
     data = data_result
+    rules_engine = HardRulesEngine(data["hist_raw"])
     logger.info("Application started")
 
     tool_mode = _render_sidebar(models)
 
     tabs = st.tabs(["Score Transaction", "Batch Evaluation", "Analytics", "Logs", "Settings"])
     with tabs[0]:
-        _tab_score_transaction(data, models, tool_mode)
+        _tab_score_transaction(data, models, tool_mode, rules_engine)
     with tabs[1]:
         _tab_batch_evaluation(data, models, tool_mode)
     with tabs[2]:

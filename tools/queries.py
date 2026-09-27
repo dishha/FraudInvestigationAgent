@@ -102,7 +102,7 @@ class CardVelocityChecker:
                 
                 count = len(window_txns)
                 velocities[window_name] = count
-                amounts_by_window[window_name] = window_txns['Amount'].tolist() if len(window_txns) > 0 else []
+                amounts_by_window[window_name] = window_txns['TransactionAmt'].tolist() if len(window_txns) > 0 else []
                 
                 # Get countries
                 if 'addr2' in window_txns.columns:
@@ -118,8 +118,8 @@ class CardVelocityChecker:
                     min_interval[window_name] = None
             
             # Card statistics
-            card_avg_amount = card_history['Amount'].mean()
-            card_max_amount = card_history['Amount'].max()
+            card_avg_amount = card_history['TransactionAmt'].mean()
+            card_max_amount = card_history['TransactionAmt'].max()
             card_num_countries = card_history['addr2'].nunique() if 'addr2' in card_history.columns else 0
             days_since_first_txn = (current_txn_time - card_history['TransactionDT'].min()) / 86400
             
@@ -210,10 +210,13 @@ class DeviceProfileChecker:
         try:
             if pd.isna(device_id) or device_id == '':
                 return ToolResult(
-                    result={'error': 'Unknown device'},
+                    result={
+                        'device_id': None,
+                        'note': 'DeviceInfo not present on transaction — no signal available'
+                    },
                     confidence=0.0,
                     data_points=0,
-                    error="Device ID is missing or unknown"
+                    error="Device ID missing"
                 )
             
             # Get device history
@@ -286,7 +289,7 @@ class DeviceProfileChecker:
                     'num_transactions': len(device_history),
                     'fraud_rate': float(device_fraud_rate),
                     'fraud_count': int(device_fraud_count),
-                    'avg_amount': float(device_history['Amount'].mean()),
+                    'avg_amount': float(device_history['TransactionAmt'].mean()),
                     'fraud_risk_signals': fraud_risk_signals,
                     'summary': f'{num_cards} cards, {device_fraud_rate:.1%} fraud rate'
                 },
@@ -346,12 +349,13 @@ class EmailDomainChecker:
             if pd.isna(email_domain) or email_domain == '':
                 return ToolResult(
                     result={
-                        'error': 'Unknown email domain',
-                        'is_risky': True
+                        'domain': None,
+                        'is_risky': None,
+                        'note': 'P_emaildomain not present on transaction — no signal available'
                     },
-                    confidence=0.7,
+                    confidence=0.0,
                     data_points=0,
-                    error="Email domain is missing"
+                    error="Email domain missing"
                 )
 
             # Check domain reputation
@@ -504,13 +508,20 @@ class AddressClusterChecker:
             
             # Fraud ring detection
             fraud_risk_signals = []
-            
-            # Multiple cards at address
-            if num_cards > 5:
+
+            # Require both elevated card count AND elevated fraud rate to call it a fraud ring.
+            # High card count alone just means a busy/shared location (apartment, campus, mall).
+            if num_cards > 5 and addr_fraud_rate > 0.12:
                 fraud_risk_signals.append({
                     'signal': 'fraud_ring_suspect',
-                    'description': f'{num_cards} different cards from same address',
+                    'description': f'{num_cards} different cards from same address with {addr_fraud_rate:.1%} fraud rate',
                     'severity': 'high'
+                })
+            elif num_cards > 5:
+                fraud_risk_signals.append({
+                    'signal': 'high_volume_address',
+                    'description': f'{num_cards} cards from same address but only {addr_fraud_rate:.1%} fraud rate — likely shared/commercial location',
+                    'severity': 'low'
                 })
             elif num_cards > 2:
                 fraud_risk_signals.append({
@@ -518,7 +529,7 @@ class AddressClusterChecker:
                     'description': f'{num_cards} cards from same address',
                     'severity': 'medium'
                 })
-            
+
             # High fraud rate from address
             if addr_fraud_rate > 0.12:  # >12% fraud
                 fraud_risk_signals.append({
@@ -537,7 +548,7 @@ class AddressClusterChecker:
                     'num_transactions': len(addr_txns),
                     'fraud_rate': float(addr_fraud_rate),
                     'fraud_count': int(addr_fraud_count),
-                    'avg_amount': float(addr_txns['Amount'].mean()),
+                    'avg_amount': float(addr_txns['TransactionAmt'].mean()),
                     'fraud_risk_signals': fraud_risk_signals,
                     'summary': f'{num_cards} cards, {addr_fraud_rate:.1%} fraud rate'
                 },

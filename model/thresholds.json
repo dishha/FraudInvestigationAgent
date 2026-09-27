@@ -1,0 +1,22 @@
+{
+  "fastpath_approve": 0.01,
+  "soft_decline": 0.07,
+  "review": 0.21,
+  "block": 0.53,
+  "fastpath_block": 0.72,
+  "criteria": {
+    "fastpath_approve": "max score where val precision < 10% \u2014 agents skipped, auto-approve",
+    "soft_decline": "min score where val precision >= 30% \u2014 soft challenge user",
+    "review": "min score where val precision >= 60% \u2014 route to human review",
+    "block": "min score where val precision >= 80% \u2014 auto-block",
+    "fastpath_block": "min score where val precision >= 90% \u2014 agents skipped, definite fraud"
+  },
+  "val_metrics": {
+    "base_fraud_rate": 0.034,
+    "fastpath_approve_zone_fraud_rate": 0.004,
+    "soft_decline_zone_fraud_rate": 0.028,
+    "review_zone_fraud_rate": 0.104,
+    "block_zone_fraud_rate": 0.288,
+    "fastpath_block_zone_fraud_rate": 0.584
+  }
+}

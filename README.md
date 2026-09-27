@@ -4,6 +4,27 @@ A production-grade fraud detection system combining a LightGBM scoring model wit
 
 ---
 
+## Just want to see it?
+
+No data download or model training needed — the trained model is included in the repo and the app runs in **mock mode** without an API key.
+
+```bash
+git clone <repo-url>
+cd fraud-investigation-engine
+
+python -m venv .venv
+source .venv/bin/activate       # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+
+streamlit run app.py
+```
+
+Open [http://localhost:8501](http://localhost:8501). Go to the **Score Transaction** tab, pick any transaction index, and click **Run Investigation** to see the full pipeline output — fraud score, agent reasoning, and final decision.
+
+> Agent responses will be simulated (mock mode). To enable real Claude AI reasoning, set `ANTHROPIC_API_KEY=sk-ant-...` before running.
+
+---
+
 ## Architecture
 
 ```
@@ -36,6 +57,54 @@ Transaction
                      │
                      ▼
          APPROVE / SOFT_DECLINE / REVIEW / BLOCK
+
+```
+
+```
+Transaction
+     │
+     ▼
+┌─────────────────────────────────────┐
+│  LAYER 0: Hard Rules Engine         │  ← Always runs. Cannot be overridden.
+│  • Card velocity > N txns/min       │    If triggered → decision is final.
+│  • Known blacklisted device         │    Agent only writes the audit note.
+│  • Amount > $X from new device      │
+└──────────────┬──────────────────────┘
+               │ no hard rule hit
+               ▼
+┌─────────────────────────────────────┐
+│  LAYER 1: ML Score Fast-Path        │  ← Deterministic tails.
+│                                     │    No agent needed.
+│  score ≥ 0.92  →  BLOCK (final)    │
+│  score < 0.15  →  APPROVE (final)  │
+└──────────────┬──────────────────────┘
+               │ score in 0.15–0.92
+               ▼
+┌─────────────────────────────────────┐
+│  LAYER 2: Agentic Investigation     │  ← Agents run ONLY here.
+│                                     │    Advisory, zone-constrained.
+│  REVIEW zone  (0.65–0.92)          │
+│  SOFT_DECLINE (0.50–0.65)          │
+│  Low-risk     (0.15–0.50)          │
+└──────────────┬──────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────┐
+│  LAYER 3: Decision Governance       │  ← Deterministic merge.
+│                                     │    Constrains what agents can output.
+│  final = max(threshold,             │
+│              hard_rule,             │
+│              constrained_agent)     │
+└──────────────┬──────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────┐
+│  LAYER 4: Human Review Queue        │  ← REVIEW decisions + high-value txns
+│  Agent provides evidence summary    │    never auto-resolve.
+│  for human analyst                  │
+└─────────────────────────────────────┘
+
+
 ```
 
 ### Decision Thresholds
@@ -43,9 +112,12 @@ Transaction
 | Decision | Score Range | Meaning |
 |---|---|---|
 | `APPROVE` | < 0.50 | Low risk, proceed |
-| `SOFT_DECLINE` | 0.50 – 0.65 | Borderline, soft block |
-| `REVIEW` | 0.65 – 0.85 | Elevated risk, queue for review |
-| `BLOCK` | ≥ 0.85 | High confidence fraud, hard block |
+| `SOFT_DECLINE` | 0.50 – 0.65 | Borderline, soft block | transaction is paused, not rejected. If the user verifies successfully, it goes through normally. If they don't respond or fail, it becomes a block.
+| `REVIEW` | 0.65 – 0.85 | Elevated risk, queue for review | transaction completes but gets flagged for a human analyst to look at after the fact.
+
+| `BLOCK` | ≥ 0.85 | High confidence fraud, hard block | transaction is rejected, full stop. Card may be frozen.
+
+
 
 ---
 

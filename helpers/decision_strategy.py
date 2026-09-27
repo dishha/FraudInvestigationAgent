@@ -41,11 +41,11 @@ def threshold_decision_from_score(
     review_threshold: float,
     soft_decline_threshold: float,
 ) -> str:
-    if fraud_score > block_threshold:
+    if fraud_score >= block_threshold:
         return "🔴 BLOCK"
-    if fraud_score > review_threshold:
+    if fraud_score >= review_threshold:
         return "🟠 REVIEW"
-    if fraud_score > soft_decline_threshold:
+    if fraud_score >= soft_decline_threshold:
         return "🟡 SOFT_DECLINE"
     return "🟢 APPROVE"
 

@@ -14,11 +14,27 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Dict, Any, Optional, List
-
+import config
 try:
     import anthropic
 except ImportError:
     anthropic = None
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+try:
+    from langsmith import traceable
+    _LANGSMITH_ENABLED = bool(os.getenv("LANGSMITH_API_KEY"))
+except ImportError:
+    _LANGSMITH_ENABLED = False
+    def traceable(_fn=None, **kwargs):
+        if _fn is not None:
+            return _fn
+        return lambda fn: fn
 
 logger = logging.getLogger(__name__)
 
@@ -27,11 +43,21 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 # Add option for local testing with mock data (no api calls)
+# take these from config.py
 
-MOCK_MODE = False
+MOCK_MODE = config.MOCK_MODE
 
-VALID_DECISIONS = {"APPROVE", "SOFT_DECLINE", "REVIEW", "BLOCK"}
-VALID_RISK_LEVELS = {"LOW", "MEDIUM", "HIGH", "CRITICAL"}
+VALID_DECISIONS = config.VALID_DECISIONS
+VALID_RISK_LEVELS = config.VALID_RISK_LEVELS
+
+
+def _extract_json(text: str) -> str:
+    """Return the JSON object substring from a model response."""
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        return text[start : end + 1]
+    return text.strip()
 
 
 def _safe_float(value: Any, default: float) -> float:
@@ -155,6 +181,7 @@ class FraudAssessment:
     reasoning: str
     reasoning_details: Dict[str, Any]
     execution_time_ms: float
+    agent_cost_usd: float = 0.0
 
 # ============================================================================
 # AGENT 1: ML ANALYST
@@ -164,7 +191,7 @@ class MLAnalyst:
     """
     Interprets ML model outputs and explains predictions using SHAP values
     """
-    
+
     SYSTEM_PROMPT = """You are an ML Analyst specializing in fraud risk scoring.
 
 Your role:
@@ -202,7 +229,9 @@ Always:
     
     def __init__(self, client: Any):
         self.client = client
-    
+        self.last_usage = {"input_tokens": 0, "output_tokens": 0}
+
+    @traceable(name="MLAnalyst", run_type="llm")
     def analyze(self, fraud_score: float, shap_values: Dict[str, float],
                 feature_importance: List[tuple],
                 raw_score: Optional[float] = None) -> Dict[str, Any]:
@@ -251,16 +280,21 @@ Provide your analysis as JSON."""
             return validate_ml_analysis(mock_analysis)
         
         response = self.client.messages.create(
-            model="claude-opus-4-20250805",
+            model="claude-haiku-4-5-20251001",
+            temperature=0,
             max_tokens=1000,
             system=self.SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_message}]
+            messages=[
+                {"role": "user", "content": user_message},
+                {"role": "assistant", "content": "{"},
+            ]
         )
-        response_text = response.content[0].text
-        
+        self.last_usage = {"input_tokens": response.usage.input_tokens, "output_tokens": response.usage.output_tokens}
+        response_text = "{" + response.content[0].text
+
         # Parse response
         try:
-            raw_analysis = json.loads(response_text)
+            raw_analysis = json.loads(_extract_json(response_text))
             raw_analysis["raw_response"] = response_text
             return validate_ml_analysis(raw_analysis)
         except Exception as exc:
@@ -341,7 +375,9 @@ Always:
     
     def __init__(self, client: Any):
         self.client = client
-    
+        self.last_usage = {"input_tokens": 0, "output_tokens": 0}
+
+    @traceable(name="TransactionInvestigator", run_type="llm")
     def investigate(self, tool_results: Dict[str, Any]) -> Dict[str, Any]:
         """
         Investigate transaction using tool results
@@ -373,15 +409,20 @@ Provide your investigation as JSON with:
             }
 
         response = self.client.messages.create(
-            model="claude-opus-4-20250805",
+            model="claude-haiku-4-5-20251001",
+            temperature=0,
             max_tokens=1500,
             system=self.SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_message}]
+            messages=[
+                {"role": "user", "content": user_message},
+                {"role": "assistant", "content": "{"},
+            ]
         )
-        response_text = response.content[0].text
-        
+        self.last_usage = {"input_tokens": response.usage.input_tokens, "output_tokens": response.usage.output_tokens}
+        response_text = "{" + response.content[0].text
+
         try:
-            result = json.loads(response_text)
+            result = json.loads(_extract_json(response_text))
             result["raw_response"] = response_text
             return result
         except Exception:
@@ -459,8 +500,10 @@ Always:
     
     def __init__(self, client: Any):
         self.client = client
-    
-    def assess(self, ml_analysis: Dict[str, Any], 
+        self.last_usage = {"input_tokens": 0, "output_tokens": 0}
+
+    @traceable(name="RiskAssessor", run_type="llm")
+    def assess(self, ml_analysis: Dict[str, Any],
                investigation: Dict[str, Any]) -> Dict[str, Any]:
         """
         Synthesize ML and investigation findings into risk assessment
@@ -495,15 +538,20 @@ Provide risk assessment as JSON with:
             return validate_risk_assessment(mock_assessment)
 
         response = self.client.messages.create(
-            model="claude-opus-4-20250805",
+            model="claude-haiku-4-5-20251001",
+            temperature=0,
             max_tokens=1200,
             system=self.SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": context}]
+            messages=[
+                {"role": "user", "content": context},
+                {"role": "assistant", "content": "{"},
+            ]
         )
-        response_text = response.content[0].text
+        self.last_usage = {"input_tokens": response.usage.input_tokens, "output_tokens": response.usage.output_tokens}
+        response_text = "{" + response.content[0].text
 
         try:
-            raw_assessment = json.loads(response_text)
+            raw_assessment = json.loads(_extract_json(response_text))
             raw_assessment["raw_response"] = response_text
             return validate_risk_assessment(raw_assessment)
         except Exception as exc:
@@ -568,7 +616,9 @@ Output as plain English explanation (not JSON).
     
     def __init__(self, client: Any):
         self.client = client
-    
+        self.last_usage = {"input_tokens": 0, "output_tokens": 0}
+
+    @traceable(name="DecisionExplainer", run_type="llm")
     def explain(self, decision: str, risk_assessment: Dict[str, Any],
                 transaction: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -591,12 +641,14 @@ Write a clear, respectful explanation in plain English (no jargon)."""
             }
         
         response = self.client.messages.create(
-            model="claude-opus-4-20250805",
+            model="claude-haiku-4-5-20251001",
+            temperature=0,
             max_tokens=500,
             system=self.SYSTEM_PROMPT,
             messages=[{"role": "user", "content": context}]
         )
-        
+        self.last_usage = {"input_tokens": response.usage.input_tokens, "output_tokens": response.usage.output_tokens}
+
         return {
             "explanation": response.content[0].text,
             "raw_response": response.content[0].text
@@ -625,7 +677,11 @@ class FraudInvestigationOrchestrator:
                 raise RuntimeError("The anthropic package is not installed. Install it to use real LLM calls.")
             self.client = anthropic.Anthropic(auth_token=auth_token)
         else:
-            print("WARNING: No Anthropic credentials found. Set ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN to enable real LLM calls.")
+            if not config.MOCK_MODE:
+                raise RuntimeError(
+                    "No Anthropic credentials found. Set ANTHROPIC_API_KEY in your .env file, "
+                    "or set MOCK_MODE = True in config.py to run without real API calls."
+                )
             global MOCK_MODE
             MOCK_MODE = True
             self.client = None
@@ -635,7 +691,8 @@ class FraudInvestigationOrchestrator:
         self.risk_assessor = RiskAssessor(self.client)
         self.explainer = DecisionExplainer(self.client)
     
-    def assess_transaction(self, 
+    @traceable(name="FraudInvestigation", run_type="chain")
+    def assess_transaction(self,
                           transaction: Dict[str, Any],
                           ml_output: Dict[str, Any],
                           tool_results: Dict[str, Any]) -> FraudAssessment:
@@ -681,6 +738,14 @@ class FraudInvestigationOrchestrator:
         explanation_text = explanation_results.get("explanation") if isinstance(explanation_results, dict) else str(explanation_results)
 
         execution_time = (time.time() - start_time) * 1000
+
+        from config import CLAUDE_INPUT_COST_PER_TOKEN, CLAUDE_OUTPUT_COST_PER_TOKEN
+        agents = [self.ml_analyst, self.investigator, self.risk_assessor, self.explainer]
+        total_input  = sum(a.last_usage["input_tokens"]  for a in agents)
+        total_output = sum(a.last_usage["output_tokens"] for a in agents)
+        agent_cost_usd = (total_input * CLAUDE_INPUT_COST_PER_TOKEN
+                          + total_output * CLAUDE_OUTPUT_COST_PER_TOKEN)
+
         reasoning_details = {
             'ml_analysis': ml_analysis,
             'investigation_findings': investigation,
@@ -700,7 +765,8 @@ class FraudInvestigationOrchestrator:
             decision=decision,
             reasoning=json.dumps(reasoning_details, indent=2, default=str),
             reasoning_details=reasoning_details,
-            execution_time_ms=execution_time
+            execution_time_ms=execution_time,
+            agent_cost_usd=agent_cost_usd,
         )
 
 # ============================================================================

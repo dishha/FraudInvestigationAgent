@@ -79,14 +79,18 @@ if __name__ == "__main__":
     # ========================================================================
     print("\n[0] Setup and load features...")
 
-    Path('../model').mkdir(exist_ok=True)
-    Path('../model/results').mkdir(parents=True, exist_ok=True)
+    script_dir = Path(__file__).parent.parent
+    model_dir = script_dir / 'model'
+    data_dir = script_dir / 'data'
+    
+    model_dir.mkdir(exist_ok=True)
+    (model_dir / 'results').mkdir(parents=True, exist_ok=True)
 
-    with open('../data/features_train.pkl', 'rb') as f:
+    with open(data_dir / 'features_train.pkl', 'rb') as f:
         X_train, y_train, feature_names = pickle.load(f)
-    with open('../data/features_val.pkl', 'rb') as f:
+    with open(data_dir / 'features_val.pkl', 'rb') as f:
         X_val, y_val, _ = pickle.load(f)
-    with open('../data/features_test.pkl', 'rb') as f:
+    with open(data_dir / 'features_test.pkl', 'rb') as f:
         X_test, y_test, _ = pickle.load(f)
 
     print(f"✓ Train: {X_train.shape}")
@@ -220,9 +224,9 @@ if __name__ == "__main__":
     plt.xlabel('Feature Importance (Gain)')
     plt.title('Top 20 Features - LightGBM')
     plt.tight_layout()
-    plt.savefig('../model/results/feature_importance.png', dpi=100, bbox_inches='tight')
+    plt.savefig(model_dir / 'results' / 'feature_importance.png', dpi=100, bbox_inches='tight')
     plt.close()
-    print("✓ Saved ../model/results/feature_importance.png")
+    print(f"✓ Saved {model_dir / 'results' / 'feature_importance.png'}")
 
     # ========================================================================
     # SECTION 8: SHAP EXPLANATIONS
@@ -241,9 +245,9 @@ if __name__ == "__main__":
         plt.figure(figsize=(10, 8))
         shap.summary_plot(shap_fraud, X_sample, feature_names=feature_names, max_display=15, show=False)
         plt.tight_layout()
-        plt.savefig('../model/results/shap_summary.png', dpi=100, bbox_inches='tight')
+        plt.savefig(model_dir / 'results' / 'shap_summary.png', dpi=100, bbox_inches='tight')
         plt.close()
-        print("✓ Saved ../model/results/shap_summary.png")
+        print(f"✓ Saved {model_dir / 'results' / 'shap_summary.png'}")
     except Exception as e:
         print(f"⚠ SHAP failed (non-critical): {e}")
 
@@ -274,30 +278,30 @@ if __name__ == "__main__":
     axes[1].grid(alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig('../model/results/evaluation_curves.png', dpi=100, bbox_inches='tight')
+    plt.savefig(model_dir / 'results' / 'evaluation_curves.png', dpi=100, bbox_inches='tight')
     plt.close()
-    print("✓ Saved ../model/results/evaluation_curves.png")
+    print(f"✓ Saved {model_dir / 'results' / 'evaluation_curves.png'}")
 
     # ========================================================================
     # SECTION 10: SAVE ARTIFACTS
     # ========================================================================
     print("\n[10] Saving artifacts...")
 
-    model.save_model('../model/lightgbm_model.txt')
-    with open('../model/lightgbm_model.pkl', 'wb') as f:
+    model.save_model(str(model_dir / 'lightgbm_model.txt'))
+    with open(model_dir / 'lightgbm_model.pkl', 'wb') as f:
         pickle.dump(model, f)
-    with open('../model/calibrator.pkl', 'wb') as f:
+    with open(model_dir / 'calibrator.pkl', 'wb') as f:
         pickle.dump(calibrator, f)
-    with open('../model/feature_names.pkl', 'wb') as f:
+    with open(model_dir / 'feature_names.pkl', 'wb') as f:
         pickle.dump(feature_names, f)
-    feature_importance.to_csv('../model/feature_importance.csv', index=False)
-    with open('../model/metrics.json', 'w') as f:
+    feature_importance.to_csv(model_dir / 'feature_importance.csv', index=False)
+    with open(model_dir / 'metrics.json', 'w') as f:
         json.dump({'auc': round(auc_calibrated, 4), 'pr_auc': round(pr_auc_val, 4), 'brier': round(brier_after, 4)}, f)
 
-    print("✓ Saved ../model/lightgbm_model.pkl")
-    print("✓ Saved ../model/calibrator.pkl")
-    print("✓ Saved ../model/feature_names.pkl")
-    print("✓ Saved ../model/feature_importance.csv")
+    print(f"✓ Saved {model_dir / 'lightgbm_model.pkl'}")
+    print(f"✓ Saved {model_dir / 'calibrator.pkl'}")
+    print(f"✓ Saved {model_dir / 'feature_names.pkl'}")
+    print(f"✓ Saved {model_dir / 'feature_importance.csv'}")
 
     # ========================================================================
     # SECTION 11: MODEL CARD
@@ -345,9 +349,121 @@ if __name__ == "__main__":
 - All group statistics derived from training data only
 """
 
-    with open('../model/MODEL_CARD.md', 'w') as f:
+    with open(model_dir / 'MODEL_CARD.md', 'w') as f:
         f.write(model_card)
-    print("✓ Saved ../model/MODEL_CARD.md")
+    print(f"✓ Saved {model_dir / 'MODEL_CARD.md'}")
+
+    # ========================================================================
+    # SECTION 12: THRESHOLD OPTIMISATION (precision-anchored, val set)
+    # ========================================================================
+    print("\n[12] Deriving decision thresholds...")
+
+    import matplotlib.ticker as mticker
+
+    val_cal_scores = calibrator.predict(
+        model.predict(X_val, num_iteration=model.best_iteration)
+    )
+    y_val_np = np.array(y_val)
+    base_rate = float(y_val_np.mean())
+
+    sweep = np.linspace(0.005, 0.995, 5000)
+    precs, recs, f1s = [], [], []
+    for t in sweep:
+        pred = (val_cal_scores >= t).astype(int)
+        if pred.sum() == 0:
+            precs.append(1.0); recs.append(0.0); f1s.append(0.0)
+        else:
+            p = precision_score(y_val_np, pred, zero_division=1)
+            r = recall_score(y_val_np, pred, zero_division=0)
+            precs.append(p); recs.append(r)
+            f1s.append(2 * p * r / (p + r) if (p + r) > 0 else 0.0)
+    precs = np.array(precs); recs = np.array(recs); f1s = np.array(f1s)
+
+    PRECISION_TARGETS = {
+        "fastpath_approve": 0.10,
+        "soft_decline":     0.30,
+        "review":           0.60,
+        "block":            0.80,
+        "fastpath_block":   0.90,
+    }
+
+    derived_t = {}
+    print(f"\n  Base fraud rate: {base_rate:.3%}")
+    print(f"  {'Threshold':<22} {'Target':>8} {'Score':>8} {'Precision':>10} {'Recall':>8}")
+    print("  " + "-" * 58)
+    for name, target in PRECISION_TARGETS.items():
+        mask = precs >= target
+        idx = int(np.argmax(mask)) if mask.any() else int(np.argmax(precs))
+        t_val = float(sweep[idx])
+        derived_t[name] = round(t_val, 4)
+        print(f"  {name:<22} {target:>7.0%} {t_val:>8.4f} {precs[idx]:>10.3f} {recs[idx]:>8.3f}")
+
+    # Zone statistics
+    boundaries = [0.0] + [derived_t[k] for k in PRECISION_TARGETS] + [1.01]
+    zone_labels = ["auto_approve", "soft_decline", "review", "block", "fastpath_block", "definite_block"]
+    zone_rates = {}
+    print(f"\n  {'Zone':<20} {'Score range':>18} {'N':>8} {'Fraud':>7} {'Rate':>8}")
+    print("  " + "-" * 65)
+    for i, label in enumerate(zone_labels):
+        lo, hi = boundaries[i], boundaries[i + 1]
+        mask = (val_cal_scores >= lo) & (val_cal_scores < hi)
+        n = int(mask.sum()); fraud = int(y_val_np[mask].sum())
+        rate = fraud / n if n > 0 else 0.0
+        zone_rates[label] = round(rate, 4)
+        print(f"  {label:<20} [{lo:.4f}, {hi:.4f})  {n:>8,d} {fraud:>7,d} {rate:>7.1%}")
+
+    # Plots
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    ax = axes[0]
+    ax.plot(sweep, precs, color="#E24B4A", lw=1.8, label="Precision")
+    ax.plot(sweep, recs,  color="#378ADD", lw=1.8, label="Recall")
+    ax.plot(sweep, f1s,   color="#639922", lw=1.4, ls="--", label="F1")
+    ax.axhline(base_rate, color="grey", ls=":", lw=1, label=f"Base rate ({base_rate:.2%})")
+    for (name, t_val), col in zip(
+        list(derived_t.items())[:-1],
+        ["#7CB9E8", "#EF9F27", "#E24B4A", "#8B0000"],
+    ):
+        ax.axvline(t_val, color=col, ls="--", lw=1.2, label=f"{name} ({t_val:.2f})")
+    ax.set_xlabel("Threshold"); ax.set_ylabel("Score")
+    ax.set_title("Precision / Recall vs Threshold (val set)")
+    ax.legend(fontsize=8, loc="center right")
+    ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.grid(alpha=0.3)
+
+    ax2 = axes[1]
+    short_labels = ["AUTO\nAPPROVE", "SOFT\nDECLINE", "REVIEW", "BLOCK", "FAST\nBLOCK", "DEFINITE\nBLOCK"]
+    rates = [zone_rates[z] for z in zone_labels]
+    bar_colors = ["#639922", "#7CB9E8", "#EF9F27", "#E24B4A", "#A00000", "#5C0000"]
+    bars = ax2.bar(short_labels, rates, color=bar_colors, edgecolor="white", width=0.65)
+    ax2.axhline(base_rate, color="grey", ls=":", lw=1.2, label=f"Base rate ({base_rate:.2%})")
+    for bar, rate in zip(bars, rates):
+        ax2.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.005,
+                 f"{rate:.1%}", ha="center", va="bottom", fontsize=9, fontweight="bold")
+    ax2.yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1))
+    ax2.set_ylabel("Fraud rate in zone")
+    ax2.set_title("Fraud Rate per Decision Zone (val set)")
+    ax2.legend(fontsize=9)
+    ax2.set_ylim(0, min(1.0, max(rates) * 1.25)); ax2.grid(axis="y", alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(model_dir / 'results' / 'threshold_analysis.png', dpi=120, bbox_inches='tight')
+    plt.close()
+    print(f"\n✓ Saved {model_dir / 'results' / 'threshold_analysis.png'}")
+
+    thresholds_out = {
+        **{k: round(v, 4) for k, v in derived_t.items()},
+        "criteria": {
+            k: ("max score where val precision < 10%" if k == "fastpath_approve"
+                else f"min score where val precision >= {int(v * 100)}%")
+            for k, v in PRECISION_TARGETS.items()
+        },
+        "val_metrics": {
+            "base_fraud_rate": round(base_rate, 4),
+            **{f"{label}_fraud_rate": r for label, r in zip(zone_labels, rates)},
+        },
+    }
+    with open(model_dir / 'thresholds.json', 'w') as f:
+        json.dump(thresholds_out, f, indent=2)
+    print(f"✓ Saved {model_dir / 'thresholds.json'}")
 
     # ========================================================================
     # SUMMARY

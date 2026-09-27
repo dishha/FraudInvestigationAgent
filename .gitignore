@@ -6,3 +6,9 @@ data/
 
 # virtual environment
 .venv/
+
+# OS / scratch / logs / local settings
+.DS_Store
+Untitled*.ipynb
+*.log
+.claude/settings.local.json

@@ -25,10 +25,27 @@ def run_ml_batch(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Score a random sample of test transactions.
 
+    Uses stratified sampling so that both classes are represented whenever
+    the test set contains positives, preventing all-NaN metrics on small batches.
+
     Returns (idx, y_sample, cal_scores) — all numpy arrays of length n_samples.
     """
     rng = np.random.default_rng(seed)
-    idx = rng.choice(len(data["X_test"]), size=n_samples, replace=False)
+    y_all = data["y_test"].values
+    pos_idx = np.where(y_all == 1)[0]
+    neg_idx = np.where(y_all == 0)[0]
+
+    if len(pos_idx) > 0 and n_samples >= 2:
+        # Guarantee at least 1 positive; scale the rest to match the natural ratio.
+        n_pos = max(1, round(n_samples * len(pos_idx) / len(y_all)))
+        n_pos = min(n_pos, len(pos_idx), n_samples - 1)
+        n_neg = n_samples - n_pos
+        chosen_pos = rng.choice(pos_idx, size=n_pos, replace=False)
+        chosen_neg = rng.choice(neg_idx, size=min(n_neg, len(neg_idx)), replace=False)
+        idx = np.concatenate([chosen_pos, chosen_neg])
+        rng.shuffle(idx)
+    else:
+        idx = rng.choice(len(y_all), size=n_samples, replace=False)
 
     X_all = transform_features_for_scoring(data["X_test"], models["feature_names"])
     X_sample = X_all.iloc[idx]

@@ -4,7 +4,8 @@ Uses pandas categorical dtype (native, simpler, better)
 Zero data leakage, all splits use same category definitions
 
 Run as a script to rebuild features:
-    python scripts/feature_engineering.py
+    python scripts/feature_engineering.py           # v1 temporal split (default)
+    python scripts/feature_engineering.py --split v2  # v2 card-based split
 
 Import for inference:
     from scripts.feature_engineering import transform_features_for_scoring
@@ -41,8 +42,20 @@ def transform_features_for_scoring(X_test, feature_names):
 # ============================================================================
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--split", choices=["v1", "v2"], default="v1",
+        help="v1 = temporal split (ieee_prepared.pkl), v2 = card split (ieee_prepared_v2.pkl)",
+    )
+    args = parser.parse_args()
+
+    SPLIT_VERSION = args.split
+    IN_FILE  = "../data/ieee_prepared_v2.pkl" if SPLIT_VERSION == "v2" else "../data/ieee_prepared.pkl"
+    OUT_SUFFIX = "_v2" if SPLIT_VERSION == "v2" else ""
+
     print("=" * 80)
-    print("NOTEBOOK 02: FEATURE ENGINEERING (PANDAS CATEGORICAL)")
+    print(f"NOTEBOOK 02: FEATURE ENGINEERING (PANDAS CATEGORICAL) — split={SPLIT_VERSION}")
     print("=" * 80)
 
     # ========================================================================
@@ -51,7 +64,7 @@ if __name__ == "__main__":
 
     print("\n[0] Loading and validating prepared data...")
 
-    with open('../data/ieee_prepared.pkl', 'rb') as f:
+    with open(IN_FILE, 'rb') as f:
         data_dict = pickle.load(f)
 
     train_data = data_dict['train'].copy()
@@ -153,6 +166,17 @@ if __name__ == "__main__":
 
     train_stats = {}
 
+    # Global amount stats — used as fallback for cards/devices/addresses
+    # not seen in training (critical for v2 card-split where ALL val/test
+    # cards are unseen; also improves v1 for the rare unseen card).
+    train_stats['global'] = {
+        'mean_amount': float(train_data['TransactionAmt'].mean()),
+        'std_amount':  float(train_data['TransactionAmt'].std()),
+        'max_amount':  float(train_data['TransactionAmt'].quantile(0.75)),
+    }
+    print(f"  Global amount mean: ${train_stats['global']['mean_amount']:.2f}, "
+          f"std: ${train_stats['global']['std_amount']:.2f}")
+
     # Card statistics (no label used — no leakage)
     card_stats = {}
     for card_id in train_data['card1'].unique():
@@ -228,19 +252,30 @@ if __name__ == "__main__":
         data = data.copy()
 
         # Card features (no label — clean)
+        # Unseen cards (always the case in v2; rare in v1) fall back to global
+        # train statistics rather than 0, which would be a misleading signal.
         print(f"  Creating card features ({split_name})...")
+        _g = stats.get('global', {})
+        _fallback_mean = _g.get('mean_amount', 0)
+        _fallback_std  = _g.get('std_amount', 0)
+        _fallback_max  = _g.get('max_amount', 0)
+
         data['card_total_txns'] = data['card1'].map(
             lambda x: stats['card'].get(x, {}).get('total_txns', 0)
         ).fillna(0)
+        # is_new_card = 1 when the card has no training history.
+        # In v2 this is always 1 for val/test; in v1 it flags cards first seen
+        # after the training window.
+        data['is_new_card'] = (data['card_total_txns'] == 0).astype(int)
         data['card_mean_amount'] = data['card1'].map(
-            lambda x: stats['card'].get(x, {}).get('mean_amount', 0)
-        ).fillna(0)
+            lambda x: stats['card'].get(x, {}).get('mean_amount', _fallback_mean)
+        ).fillna(_fallback_mean)
         data['card_std_amount'] = data['card1'].map(
-            lambda x: stats['card'].get(x, {}).get('std_amount', 0)
-        ).fillna(0)
+            lambda x: stats['card'].get(x, {}).get('std_amount', _fallback_std)
+        ).fillna(_fallback_std)
         data['card_max_amount'] = data['card1'].map(
-            lambda x: stats['card'].get(x, {}).get('max_amount', 0)
-        ).fillna(0)
+            lambda x: stats['card'].get(x, {}).get('max_amount', _fallback_max)
+        ).fillna(_fallback_max)
 
         # Device features
         print(f"  Creating device features ({split_name})...")
@@ -346,21 +381,21 @@ if __name__ == "__main__":
 
     Path('../data').mkdir(exist_ok=True)
 
-    with open('../data/features_train.pkl', 'wb') as f:
+    with open(f'../data/features_train{OUT_SUFFIX}.pkl', 'wb') as f:
         pickle.dump((X_train, y_train, feature_cols), f)
-    print(f"✓ Saved ../data/features_train.pkl")
+    print(f"✓ Saved ../data/features_train{OUT_SUFFIX}.pkl")
 
-    with open('../data/features_val.pkl', 'wb') as f:
+    with open(f'../data/features_val{OUT_SUFFIX}.pkl', 'wb') as f:
         pickle.dump((X_val, y_val, feature_cols), f)
-    print(f"✓ Saved ../data/features_val.pkl")
+    print(f"✓ Saved ../data/features_val{OUT_SUFFIX}.pkl")
 
-    with open('../data/features_test.pkl', 'wb') as f:
+    with open(f'../data/features_test{OUT_SUFFIX}.pkl', 'wb') as f:
         pickle.dump((X_test, y_test, feature_cols), f)
-    print(f"✓ Saved ../data/features_test.pkl")
+    print(f"✓ Saved ../data/features_test{OUT_SUFFIX}.pkl")
 
-    with open('../data/train_statistics.pkl', 'wb') as f:
+    with open(f'../data/train_statistics{OUT_SUFFIX}.pkl', 'wb') as f:
         pickle.dump(train_stats, f)
-    print(f"✓ Saved ../data/train_statistics.pkl")
+    print(f"✓ Saved ../data/train_statistics{OUT_SUFFIX}.pkl")
 
     # ========================================================================
     # SUMMARY
@@ -369,6 +404,9 @@ if __name__ == "__main__":
     print("\n" + "=" * 80)
     print("NOTEBOOK 02 COMPLETE")
     print("=" * 80)
+    unseen_train = int((X_train['is_new_card'] == 1).sum())
+    unseen_val   = int((X_val['is_new_card']   == 1).sum())
+    unseen_test  = int((X_test['is_new_card']  == 1).sum())
     print(f"""
 ✓ ZERO cross-split data leakage
 ✓ Pandas categorical dtype (native, clean)
@@ -376,12 +414,19 @@ if __name__ == "__main__":
 ✓ Unseen values → code -1 (LightGBM handles it)
 ✓ Ready for LightGBM
 
+Split mode:    {SPLIT_VERSION}
 Total features: {len(feature_cols)}
+
+is_new_card breakdown:
+  train: {unseen_train:,} unseen-card rows ({unseen_train/len(X_train):.1%})
+  val:   {unseen_val:,} unseen-card rows ({unseen_val/len(X_val):.1%})
+  test:  {unseen_test:,} unseen-card rows ({unseen_test/len(X_test):.1%})
+  (v2 card-split → val/test should both be ~100%)
 
 NOTE: Within-train target-encoded features (device_fraud_rate,
 address_fraud_rate, email_fraud_rate, hour_fraud_rate) include each row's
 own label in its group statistic — consider out-of-fold encoding to
 eliminate this remaining minor leakage before the next training run.
 
-Next: python notebooks/model_training.ipynb
+Next: python scripts/ml_pipeline.py
 """)
